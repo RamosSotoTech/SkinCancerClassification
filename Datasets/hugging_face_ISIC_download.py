@@ -6,7 +6,7 @@ import multiprocessing
 # Third-party modules
 import pandas as pd
 import numpy as np
-from datasets import Dataset, load_dataset
+from datasets import Dataset, load_dataset, DatasetDict
 import matplotlib
 import optuna
 import gc
@@ -229,28 +229,34 @@ class BestValueTracker(tf.keras.callbacks.Callback):
     """
     Tracks the best validation accuracy during training.
 
-    This class is a subclass of tf.keras.callbacks.Callback and is used to track the best validation accuracy and the corresponding epoch during training.
+    This class is a subclass of tf.keras.callbacks.Callback and is used to track the monitoring metric (i.e. validation
+    accuracy) during training. It stores the best value of the monitoring metric and the epoch number at which the best
+    value was achieved.
 
     Attributes:
-        best_val_accuracy (float): The best validation accuracy achieved so far.
-        best_epoch (int): The epoch number at which the best validation accuracy was achieved.
+        best_value (float): The best monitored achieved so far.
+        best_epoch (int): The epoch number at which the best value accuracy was achieved.
 
     Methods:
-        on_epoch_end(epoch, logs): Called at the end of each epoch to update the best validation accuracy and epoch.
+        on_epoch_end(epoch, logs): Called at the end of each epoch to update the best value accuracy and epoch.
 
     Example:
         tracker = BestValueTracker()
         model.fit(x_train, y_train, validation_data=(x_val, y_val), callbacks=[tracker])
     """
-    def __init__(self):
+    def __init__(self, monitor='val_accuracy'):
         super(BestValueTracker, self).__init__()
-        self.best_val_accuracy = 0
+        self.best_value = 0
         self.best_epoch = 0
+        self._monitor = monitor
 
     def on_epoch_end(self, epoch, logs=None):
-        current_val_accuracy = logs.get("val_accuracy")
-        if current_val_accuracy > self.best_val_accuracy:
-            self.best_val_accuracy = current_val_accuracy
+        if self._monitor not in logs:
+            raise ValueError(f"Monitoring metric '{self._monitor}' not found in logs.")
+
+        current_best = logs.get(self._monitor)
+        if current_best > self.best_value:
+            self.best_value = current_best
             self.best_epoch = epoch
 
 
@@ -334,7 +340,15 @@ def preprocess_image_and_metadata(features, labels, training):
     return processed_features, dx_one_hot
 
 
-def create_tf_datasets(dataset, image_size=(256, 256), batch_size=32):
+def create_tf_datasets(dataset: DatasetDict, image_size: Tuple[int, int], batch_size: int) -> Tuple[tf.Dataset, tf.Dataset]:
+    """
+
+    :param dataset:
+    :param image_size:
+    :param batch_size:
+    :param training:
+    :return:
+    """
     # Compute age scaling parameters
     ages = np.concatenate([dataset['train']['age'], dataset['validation']['age']])
     ages = [age for age in ages if age is not None]
