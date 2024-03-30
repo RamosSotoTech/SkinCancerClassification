@@ -343,12 +343,27 @@ def preprocess_image_and_metadata(features, labels, training):
 
 def create_tf_datasets(dataset: DatasetDict, image_size: Tuple[int, int], batch_size: int) -> Tuple[Dataset, Dataset]:
     """
+    Create TensorFlow datasets for training and validation.
 
-    :param dataset:
-    :param image_size:
-    :param batch_size:
-    :param training:
-    :return:
+    :param dataset: The dataset containing the training and validation splits.
+    :type dataset: DatasetDict
+    :param image_size: The target image size for resizing.
+    :type image_size: Tuple[int, int]
+    :param batch_size: The batch size for the datasets.
+    :type batch_size: int
+    :return: Returns a tuple containing the training and validation TensorFlow datasets.
+    :rtype: Tuple[Dataset, Dataset]
+
+    The function first computes the mean and standard deviation of the ages in the dataset, to normalize them.
+    It then creates mappings for the localization and dx values. The function then applies these mappings to the
+    dataset and creates TensorFlow datasets for training and validation. The function also applies image preprocessing
+    and metadata processing to the datasets.
+
+    Note: The function assumes that the dataset contains the following keys: 'train' and 'validation'.
+    Each of these keys should contain the following: 'image', 'age', 'sex', 'localization', and 'dx'.
+
+    * The returned datasets are TensorFlow datasets which contains three tensors: 2 input tensors ('image_input' and 'metadata_input') and one output tensor ('dx').
+
     """
     # Compute age scaling parameters
     ages = np.concatenate([dataset['train']['age'], dataset['validation']['age']])
@@ -435,18 +450,18 @@ def objective(trial):
     weight = 'imagenet' if pre_trained_weights else None
     # Define the base model
     if base_model_architecture == 'VGG16':
-        base_model = tf.keras.applications.VGG16(include_top=False, weights=weight, input_shape=image_size + (3,))
+        base_model = VGG16(include_top=False, weights=weight, input_shape=image_size + (3,))
     elif base_model_architecture == 'VGG19':
-        base_model = tf.keras.applications.VGG19(include_top=False, weights=weight, input_shape=image_size + (3,))
+        base_model = VGG19(include_top=False, weights=weight, input_shape=image_size + (3,))
     elif base_model_architecture == 'ResNet101V2':
-        base_model = tf.keras.applications.ResNet101V2(include_top=False, weights=weight, input_shape=image_size + (3,))
+        base_model = ResNet101V2(include_top=False, weights=weight, input_shape=image_size + (3,))
     elif base_model_architecture == 'InceptionResNetV2':
-        base_model = tf.keras.applications.InceptionResNetV2(include_top=False, weights=weight,
+        base_model = InceptionResNetV2(include_top=False, weights=weight,
                                                              input_shape=image_size + (3,))
     elif base_model_architecture == 'Xception':
-        base_model = tf.keras.applications.Xception(include_top=False, weights=weight, input_shape=image_size + (3,))
+        base_model = Xception(include_top=False, weights=weight, input_shape=image_size + (3,))
     elif base_model_architecture == 'MobileNetV2':
-        base_model = tf.keras.applications.MobileNetV2(include_top=False, weights=weight, input_shape=image_size + (3,))
+        base_model = MobileNetV2(include_top=False, weights=weight, input_shape=image_size + (3,))
     else:
         raise ValueError(f"Invalid base model architecture: {base_model_architecture}")
 
@@ -465,6 +480,8 @@ def objective(trial):
         attention_func = squeeze_excite_block
     elif attention_mechanism == 'CBAM':
         attention_func = cbam_block
+
+    print(f"Trial parameters: {trial.params}")
 
     # Model definition
     metadata_input_shape = (len(dataset['train'][0]['localization']) + 2,)
@@ -516,8 +533,6 @@ def objective(trial):
 
     model.compile(optimizer=opt, loss=loss_fn, metrics=['accuracy'])
 
-    # reestimate_batch_norm(model, train_ds, num_batches=100)
-
     model.fit(train_ds
               , validation_data=val_ds
               , epochs=3
@@ -545,25 +560,8 @@ def objective(trial):
 
     for layer in base_model.layers[-num_layers_unfreeze:]:
         layer.trainable = True
-    # Re-estimate BatchNorm statistics
-    # reestimate_batch_norm(model, train_ds, num_batches=1000)
 
     best_value_tracker = BestValueTracker()
-
-    # class MetricReporter2OptunaCallback(tf.keras.callbacks.Callback):
-    #     def __init__(self, trial: optuna.trial.Trial, monitor: str) -> None:
-    #         super().__init__()
-    #         self._trial = trial
-    #         self._monitor = monitor
-    #
-    #     def on_epoch_end(self, epoch: int, logs=None) -> None:
-    #         logs = logs or {}
-    #         current_score = logs.get(self._monitor)
-    #
-    #         # Report current score and epoch to Optuna's trial.
-    #         self._trial.report(float(current_score), step=epoch)
-    #
-    # reporter = MetricReporter2OptunaCallback(trial, 'val_accuracy')
 
     try:
         model.fit(train_ds
@@ -572,9 +570,7 @@ def objective(trial):
                   , class_weight=class_weights
                   , callbacks=[
                 # TFKerasPruningCallback(trial, 'val_accuracy'),
-                #   reporter,
-                tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True,
-                                                 start_from_epoch=15),
+                tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
                 tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, cooldown=2),
                 # best_value_tracker
             ]
@@ -586,7 +582,7 @@ def objective(trial):
         best_epoch = best_value_tracker.best_epoch
         print(f"Best validation accuracy before pruning: {best_accuracy} at epoch {best_epoch}")
         if best_accuracy < 0.70:
-            # Prune if best accuracy is less than 60%
+            # Prune if best accuracy is less than 70%
             raise e
         else:
             return best_accuracy
@@ -620,11 +616,16 @@ if __name__ == '__main__':
                                 # pruner=optuna.pruners.NopPruner()
                                 )
 
-    # Check which model architecture has less trials and enqueue a trial for that model
+    # Check which model architecture has fewer trials and enqueue a trial for that model
     from collections import Counter
     import operator
 
-    trials = study.get_trials(states=[optuna.trial.TrialState.RUNNING])
+    trials = study.get_trials(states=[optuna.trial.TrialState.RUNNING, optuna.trial.TrialState.WAITING, optuna.trial.TrialState.COMPLETE, optuna.trial.TrialState.PRUNED])
+
+    if len(trials) == 0:
+        study.enqueue_trial({'base_model_architecture': 'VGG16'})
+        study.optimize(objective, n_trials=1, callbacks=[clear_session_callback])
+        exit()
 
     num_trials = Counter(trial.params['base_model_architecture'] for trial in trials)
 
