@@ -46,6 +46,7 @@ options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoSha
 from tensorflow.keras.layers import (Permute, Reshape, Multiply, Conv2D, Dense, Flatten,
                                      BatchNormalization, Activation, Dropout, GlobalAveragePooling2D)
 from tensorflow.keras.models import Model
+from tensorflow.data import Dataset
 from tensorflow.keras.applications import VGG16, VGG19, ResNet101V2, InceptionResNetV2, Xception, MobileNetV2
 from tensorflow.keras.losses import CategoricalFocalCrossentropy
 from tensorflow.keras.optimizers import AdamW
@@ -340,7 +341,7 @@ def preprocess_image_and_metadata(features, labels, training):
     return processed_features, dx_one_hot
 
 
-def create_tf_datasets(dataset: DatasetDict, image_size: Tuple[int, int], batch_size: int) -> Tuple[tf.Dataset, tf.Dataset]:
+def create_tf_datasets(dataset: DatasetDict, image_size: Tuple[int, int], batch_size: int) -> Tuple[Dataset, Dataset]:
     """
 
     :param dataset:
@@ -605,7 +606,7 @@ if __name__ == '__main__':
 
     study_name = 'skin_lesion_classification_with_HAM10000_dataset'
     storage_name = f"sqlite:///{study_name}.db"
-    # storage_name = f"sqlite:///{study_name}_testing.db"6
+    # storage_name = f"sqlite:///{study_name}_testing.db"
 
     from optuna.pruners import PercentilePruner
 

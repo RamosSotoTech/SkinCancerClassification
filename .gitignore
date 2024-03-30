@@ -18,7 +18,6 @@
 .idea/
 __pycache__/
 *.docx
-*.txt
 *.sqlite
 logs/
 *.index
