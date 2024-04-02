@@ -162,7 +162,7 @@ def main():
         gc.collect()
 
     study_name = 'skin_lesion_classification_with_HAM10000_dataset'
-    storage_name = f"sqlite:///"+ str(project_root) + "/experiments/{study_name}.db"
+    storage_name = f"sqlite:///../experiments/{study_name}.db"
     # storage_name = f"sqlite:///"+ str(project_root) + "/experiments/{study_name}_testing.db"
 
     from optuna.pruners import PercentilePruner
